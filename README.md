@@ -10,6 +10,41 @@
 
 ---
 
+## 版式从哪来：先测、再认、后生成
+
+不是"三选一模板"。任何一篇论文进来，走三步拿到**它自己的**版式参数：
+
+```bash
+# ① 量：页面尺寸、四边距、栏数与栏距、字号行距、页眉页脚、标题字号
+python scripts/probe_layout.py paper.pdf --json layout.json
+
+# ② 认：DOI / 元数据 / 首页横幅 → 出版方与期刊，并检查本机有没有对应文档类
+python scripts/detect_venue.py paper.pdf --layout layout.json --json venue.json
+
+# ③ 生成：按实测参数写 main.tex（或改用出版方官方文档类）
+python scripts/make_template.py layout.json --venue venue.json --out main.tex
+```
+
+`make_template.py` 两种模式：
+
+| 模式 | 做什么 | 什么时候用 |
+|---|---|---|
+| `replica`（默认） | 用 `extarticle` + `geometry` 复刻**已发表版式**：页面 544.25×742.68bp、边距 38.9/38.7/54/47.1bp、正文 8pt、行距 10.5pt、栏距 4pt 全部照填 | 想"长得像原 PDF" |
+| `official` | 套出版方文档类（`elsarticle` / `IEEEtran` / `acmart` …），选项按栏数自动选（单栏 `preprint`、双栏 `3p,twocolumn`） | 要拿去投稿 |
+
+实测对照（Elsevier TR-E 那篇 30 页论文）：
+
+| 项 | 原文 | 生成 |
+|---|---|---|
+| 页面 | 544.25 × 742.68 pt | 544.25 × 742.68 pt |
+| 左/右/上/下边距 | 38.9 / 38.7 / 54.0 / 47.1 pt | 38.9 / 38.7 / 56.1 / 49.3 pt |
+| 正文字号 / 行距 | 8.0 / 10.5 pt | 8.0 / 10.3 pt |
+| 栏数 | 1 | 1 |
+
+字体不回退成"固定宋体+Times"：probe 会报出 PDF 里的正文字体名（如 `CharisSIL`），
+生成时按映射表选最近的可安装字体，并用 `\IfFontExistsTF` 做存在性回退，换机器不会直接编译失败。
+中文字体可用 `--cjk-font` 指定。
+
 ## 它能做到什么
 
 输入 `Zhou et al. (2026), TR-E` 那样 30 页的 Elsevier 单栏论文，输出 37 页中文 PDF：
@@ -105,7 +140,7 @@ python ~/.workbuddy/skills/paper-latex-zh/scripts/build_check.py build_tex/main.
 
 ---
 
-## 四个脚本
+## 六个脚本
 
 ### `probe_layout.py` — 版式测绘
 
@@ -141,6 +176,34 @@ python crop_figures.py <input.pdf> <layout.json> --rect 10=24:58,56,498,380
 按 `probe` 给出的 bbox 裁 300 dpi PNG。`--rect` 用于修正纯位图（地图截图、照片），
 格式 `编号=页码:x0,y0,x1,y1`，坐标是 PDF pt，可从 `pages/page-NN.png` 目测
 （1 pt = 渲染 dpi / 72 像素）。
+
+### `detect_venue.py` — 识别来源
+
+```bash
+python detect_venue.py paper.pdf [--layout layout.json] [--json venue.json]
+```
+
+判据按可靠性排序：**DOI 前缀**（`10.1016`→Elsevier、`10.1109`→IEEE、`10.1145`→ACM…）
+→ 元数据 `creator/producer` → 首页横幅与页眉文字。每条结论都带证据，识别不出时如实标注。
+
+同时用 `kpsewhich` 检查本机装了哪些文档类（TeX Live 一般有 `elsarticle`、`IEEEtran`、`acmart`、
+`revtex4-2`，`sn-jnl`/`mdpi` 之类常缺），缺了会在报告里说明而不是默默失败。
+
+中文文献（汉字占比 >15%）直接判 `ctexart`，不走外文模板。
+
+### `make_template.py` — 按实测生成 main.tex
+
+```bash
+python make_template.py layout.json [--venue venue.json] [--mode replica|official] \
+       [--out main.tex] [--columns 1|2] [--latin-font NAME] [--cjk-font NAME] \
+       [--title 标题] [--header-left 左页眉] [--header-right 右页眉]
+```
+
+要点：
+- 单位用 **bp**（PDF 点）。写成 `pt` 会因 TeX pt ≠ bp 让页面小 0.4%，30 页后越差越明显；
+- 只给标题时才 `\maketitle`，空标题会白占一段竖直空间，把正文顶下去 20pt；
+- 页眉左右分开填 `\fancyhead[L]/[R]`，取自实测的 `header_left/header_right`；
+- 字体走 `\IfFontExistsTF` 三级回退，缺字体不报错。
 
 ### `docx2tex.py` — Word 转 LaTeX
 
@@ -186,13 +249,15 @@ Overfull h  : 0
 
 ---
 
-## 两个模板
+## 三个内置模板（可不用）
 
 | 模板 | 适用 | 版式 |
 |---|---|---|
 | `assets/main-single.tex` | Elsevier / TR 系列 | 窄页单栏，首页左关键词右摘要，页眉左右分栏 |
 | `assets/main-twocol.tex` | 中文高校学报 | A4 双栏，通栏标题，栏距 7 mm |
 | `assets/main-cn-a4.tex` | Word 论文 / 开题报告 | A4 单栏，宋体小四，1.5 倍行距，黑体标题 |
+
+这三个模板是「懒得测」时的兜底。**优先级：`make_template.py` 生成 > 内置模板**——生成的是这篇论文的实测值，模板只是常见配置的近似。
 
 两者顶部都把页面尺寸、边距、页眉文字抽成宏（`\PageW`、`\MargL`、`\HeadL` …），
 改参数即可，不用翻 `geometry` 定义。
@@ -218,6 +283,9 @@ Overfull h  : 0
 - **图题拆行仍可能判偏**。四条规则能覆盖多数情况，但不保证 100%。**裁完必须逐张核对**，
   工具只做初筛。
 - **浮动体前后会留白**。体量接近整页的表/算法，LaTeX 会推到下一页。要完全贴合原页序需逐页微调。
+- **官方文档类 ≠ 已发表版式**。`elsarticle preprint` 是投稿版，和 ScienceDirect 上排版好的 PDF
+  不是一回事；要「长得像」用 `replica`，要投稿用 `official`，两者不能兼得。
+- **栏距只能测到整栏空白**。CJK 两端对齐会把行撑到栏边，实测栏距偏小 2–4pt；<4pt 会判成单栏。
 - **中文字体依赖系统**。模板默认 Windows 字体名，换平台须改模板顶部。
 - **Word 表单只能尽力而为**。嵌套表格、大量合并单元格、无边框布局表的版式依赖 Word
   的格子技巧，自动转换只保证"文字不丢、能编译"，不保证"长得一样"；编不过时加
@@ -241,6 +309,8 @@ paper-latex-zh/
 ├── scripts/
 │   ├── probe_layout.py           # 版式测绘 + 图表定位（PDF 路径）
 │   ├── crop_figures.py           # 批量裁图（PDF 路径）
+│   ├── detect_venue.py           # 识别期刊/出版方与可用文档类
+│   ├── make_template.py          # 按实测参数生成 main.tex
 │   ├── docx2tex.py               # Word → LaTeX（Word 路径）
 │   └── build_check.py            # 编译校验（两条路径共用）
 ├── assets/
@@ -249,7 +319,7 @@ paper-latex-zh/
 │   └── main-cn-a4.tex            # A4 中文论文模板（Word 默认版式）
 └── references/
     ├── layout-metrics.md         # 版式参数换算表 + 两类期刊实测值
-    └── pitfalls.md               # 12 条 PDF 坑 + 6 条 Word 坑 + 版权合规
+    └── pitfalls.md               # 14 条 PDF 坑 + 6 条 Word 坑 + 版权合规
 ```
 
 ---

@@ -45,19 +45,26 @@ pdftoppm -r 200 -png source.pdf pages/page             # 整页渲染，作视�
 **必须**保留 `pages/page-*.png`：后续每一节排完都要与对应原页并排比对，这是"贴近原文"的
 唯一客观依据。
 
-### 第 2 步：实测版式
+### 第 2 步：实测版式 + 识别来源 + 生成模板
+
+**不要套固定模板**。每篇论文的页面尺寸/边距/栏数/字号都可能不同，按三步生成它自己的：
 
 ```bash
 python <skill>/scripts/probe_layout.py source.pdf --json layout.json
+python <skill>/scripts/detect_venue.py source.pdf --layout layout.json --json venue.json
+python <skill>/scripts/make_template.py layout.json --venue venue.json --out main.tex
 ```
 
-输出页面尺寸、页边距、栏数、字号、行距、页眉页脚，以及每张图的 bbox。把结果按
-`references/layout-metrics.md` 的换算表填进模板顶部参数。
+- `probe_layout.py`：页面尺寸、四边距、栏数与栏距、字号行距、页眉左右、标题字号、图表 bbox；
+- `detect_venue.py`：DOI 前缀优先，其次元数据与首页横幅，给出出版方 + 可用文档类（含 `kpsewhich` 可用性）；
+- `make_template.py`：`replica` 按实测逐项落参数（页面尺寸精确到 0.01bp，四边距误差 ≤2pt）；
+  `official` 改用出版方文档类（elsarticle / IEEEtran / acmart），按栏数自动选 `preprint` 或 `3p,twocolumn`。
 
 判读要点：
-- `columns` = 1 就用单栏模板，= 2 用双栏模板；
-- 英文 8–9 pt 对应中文 9.5–10 pt 视觉密度（probe 给的是原文值，不是目标值）；
-- `\linespread` ≈ 目标行距 / (字号 × 1.2)。
+- `columns` 决定单/双栏；栏距取自实测 `gutter_pt`；
+- probe 给的是**原文**字号行距。要复刻就照填；要中文更舒适再按
+  `references/layout-metrics.md` 换算（英文 8–9 pt ≈ 中文 9.5–10 pt）；
+- 生成后必须用 `build_check.py` 复测一遍，必要时用 `--size/--columns/--latin-font` 微调。
 
 ### 第 3 步：裁剪插图
 
@@ -161,15 +168,17 @@ python <skill>/scripts/build_check.py build_tex/main.tex --preview 1,2
 
 | 资源 | 用途 |
 |---|---|
-| `scripts/probe_layout.py` | 实测页面/栏数/字号/行距/页眉页脚，定位图表 bbox |
+| `scripts/probe_layout.py` | 实测页面/栏数/栏距/字号/行距/页眉页脚/标题字号，定位图表 bbox |
+| `scripts/detect_venue.py` | DOI + 元数据 + 首页横幅 → 出版方、期刊、可用文档类 |
+| `scripts/make_template.py` | 按实测参数生成 main.tex（replica / official 两种模式） |
 | `scripts/crop_figures.py` | 按 bbox 批量裁剪插图；支持 `--rect` 手动修正 |
 | `scripts/docx2tex.py` | Word → LaTeX：pandoc + 媒体扁平化 + 表格修复 + 生成 main.tex |
 | `scripts/build_check.py` | 编译两遍 + 校验编号连续性/溢出 + 渲染预览 |
-| `assets/main-single.tex` | 单栏模板（Elsevier 类，窄页 + 双栏摘要区） |
+| `assets/main-single.tex` | 单栏模板（兜底用；能用 make_template 生成就不用它） |
 | `assets/main-twocol.tex` | 双栏模板（中文高校学报类，通栏标题 + 双栏正文） |
 | `assets/main-cn-a4.tex` | 中文 A4 单栏模板（Word 默认版式，宋体小四 / 1.5 倍行距） |
 | `references/layout-metrics.md` | 版式参数换算表与两类期刊的实测值 |
-| `references/pitfalls.md` | 已知坑与对策（PDF 版式 12 类 + Word 转换 6 类） |
+| `references/pitfalls.md` | 已知坑与对策（PDF 版式 14 类 + Word 转换 6 类） |
 | `README.md` | 给人看的说明：安装、依赖、快速开始、已知限制 |
 
 ## 硬性要求
@@ -177,17 +186,20 @@ python <skill>/scripts/build_check.py build_tex/main.tex --preview 1,2
 1. **先量后写**：不实测版式就动手排版，必然返工。
 2. **首页先定稿**：首页版式是整篇的基准。
 3. **每节编译比对**：攒到最后一起编译，错误会互相掩盖。
-4. **编号交给 LaTeX**：手工写编号一定会错位（Word 里已有手写编号时用 `--numbering keep`，
+4. **先测再套模板**：`geometry` 的数字用 **bp**（PDF 点），写成 pt 会小 0.4%；页面尺寸与边距
+   一律以 `probe_layout.py` 的实测值为准，不要凭 A4/Letter 假设。
+5. **编号交给 LaTeX**：手工写编号一定会错位（Word 里已有手写编号时用 `--numbering keep`，
    让标题成为不编号的 `\section*`，而不是叠加两层编号）。
-5. **图表内文字保留原文**：重绘图内中文成本极高且易失真，学术翻译惯例是保留原图。
-6. **不复制出版社标识**：logo、横幅、DOI 页脚等不要复刻。
-7. **版权**：期刊论文翻译权通常归出版社，产物仅限个人研读，不得公开分发或提交到公开仓库。
-8. **Windows 上不要调用 `convert`**：那是磁盘格式转换工具（FAT→NTFS），不是 ImageMagick。
+6. **图表内文字保留原文**：重绘图内中文成本极高且易失真，学术翻译惯例是保留原图。
+7. **不复制出版社标识**：logo、横幅、DOI 页脚等不要复刻。
+8. **版权**：期刊论文翻译权通常归出版社，产物仅限个人研读，不得公开分发或提交到公开仓库。
+9. **Windows 上不要调用 `convert`**：那是磁盘格式转换工具（FAT→NTFS），不是 ImageMagick。
    需要图片格式转换时显式判断 `magick -version`，不要把 `convert` 当兜底。
 
 ## 常见返工点
 
 PDF 路径按 `references/pitfalls.md` 顺序排查：图号错位 → 图题误判 → 同页多图 → 纯位图 →
-字号误判 → 页眉缺失 → 浮动体空白 → 字体警告 → 宽表溢出 → URL 溢出 → 算法块溢出。
+字号误判 → 页眉缺失 → 浮动体空白 → 字体警告 → 宽表溢出 → URL 溢出 → 算法块溢出 →
+pt/bp 单位 → 双栏误判。
 
 Word 路径按同一文件末尾五条排查：WMF 公式 → 下划线不换行 → 嵌套表格 → 图片超宽 → 编号被重排。

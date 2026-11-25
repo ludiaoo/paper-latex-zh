@@ -72,29 +72,72 @@ def body_font_and_leading(doc, sample_pages=6):
     return size, leading, candidates, font
 
 
+def title_font(doc):
+    """首页最大字号的 span 视为标题字号（用于生成模板时复刻标题层级）。"""
+    sizes = Counter()
+    for blk in page_text_dict(doc[0]).get("blocks", []):
+        for ln in blk.get("lines", []):
+            for sp in ln.get("spans", []):
+                t = (sp.get("text") or "").strip()
+                if len(t) >= 4:
+                    sizes[round(sp["size"], 1)] += len(t)
+    return max(sizes) if sizes else None
+
+
 def estimate_columns(doc, sample_pages=6):
-    """用正文区的 x 直方图判断单栏/双栏。返回 (n_cols, gutter_x0, gutter_x1)。"""
-    xs = []
+    """判断单栏/双栏，并给出中缝的实际 x 范围。
+
+    踩过的两个坑：
+    1) 假设「中缝在页面正中 10%」——窄页双栏（Elsevier 544pt、栏距 14pt）会漏判；
+    2) 用「词起点」做直方图——中文每行只有一个起点，整栏几乎只有一列计数，
+       缺口会虚胖成上百 pt。改为统计**覆盖度**：每个词的 x0..x1 都算覆盖，
+       栏间没有字，缺口才是真中缝。
+    """
+    boxes = []
     for pno in range(min(sample_pages, doc.page_count)):
-        pg = doc[pno]
-        for w in pg.get_text("words"):
-            xs.append((w[0], w[2], w[1]))
-    if not xs:
+        for w in doc[pno].get_text("words"):
+            boxes.append((w[0], w[2]))
+    if not boxes:
         return 1, None, None
-    xmin = min(a for a, _, _ in xs)
-    xmax = max(b for _, b, _ in xs)
+    xmin = min(a for a, _ in boxes)
+    xmax = max(b for _, b in boxes)
     width = xmax - xmin
-    # 把正文横向分成 40 格，统计每格词数
-    bins = [0] * 40
-    for a, b, _ in xs:
-        i = min(39, max(0, int((a - xmin) / width * 40)))
-        bins[i] += 1
-    mid = bins[18:22]
-    total = sum(bins) or 1
-    # 中缝若几乎无词（<1.5%）且两侧均有大量词，判为双栏
-    if sum(mid) / total < 0.015 and sum(bins[:18]) > total * 0.2 and sum(bins[22:]) > total * 0.2:
-        i = bins.index(min(mid))
-        return 2, xmin + width * i / 40, xmin + width * (i + 1) / 40
+    if width <= 0:
+        return 1, None, None
+
+    step = 1.0
+    nbins = int(width / step) + 2
+    cover = [0] * nbins
+    for a, b in boxes:
+        i0 = max(0, int((a - xmin) / step))
+        i1 = min(nbins - 1, int((b - xmin) / step))
+        for i in range(i0, i1 + 1):
+            cover[i] += 1
+
+    # 只在版心 35%–65% 找覆盖为零的连续带
+    lo, hi = int(nbins * 0.35), int(nbins * 0.65)
+    best = (0, None, None)
+    i = lo
+    while i < hi:
+        if cover[i] == 0:
+            j = i
+            while j < hi and cover[j] == 0:
+                j += 1
+            if j - i > best[0]:
+                best = (j - i, i, j)
+            i = j
+        else:
+            i += 1
+
+    run, i0, i1 = best
+    if run * step < 4:                       # 栏距小于 4pt 视为单栏（CJK 两端对齐会吃到 4pt）
+        return 1, None, None
+    g0, g1 = xmin + i0 * step, xmin + i1 * step
+    mid = (g0 + g1) / 2
+    left = sum(1 for a, b in boxes if b <= mid)
+    right = sum(1 for a, b in boxes if a >= mid)
+    if left > len(boxes) * 0.2 and right > len(boxes) * 0.2:
+        return 2, round(g0, 1), round(g1, 1)
     return 1, None, None
 
 
@@ -110,10 +153,13 @@ def header_footer(doc, page_no=2):
     head, foot = [], []
     for w in pg.get_text("words"):
         y = w[1]
-        if y < h * 0.08:
+        if y < h * 0.06:          # 6%：8% 会把正文首行也算进来
             head.append((w[1], w[0], w[4]))
-        elif y > h * 0.92:
-            foot.append((w[1], w[0], w[4]))
+        elif y > h * 0.90:
+            # 页脚：底部 10% 内且像页码（纯数字/罗马数字），或已经贴到页面最底
+            txt = w[4].strip()
+            if re.fullmatch(r"[0-9ivxlcIVXLC\-–—]+", txt) or y > h * 0.96:
+                foot.append((w[1], w[0], w[4]))
     # 按 y 聚成行。左右页眉常因字号/基线微差落在不同 y，只取一行会丢一侧，
     # 故把所有行按 y 排序后用 " || " 拼接。
     def rows_to_line(items):
@@ -124,7 +170,14 @@ def header_footer(doc, page_no=2):
             " ".join(t for _, t in sorted(rows[k])) for k in sorted(rows)
         )
 
-    return rows_to_line(head), rows_to_line(foot)
+    # 左/右页眉分开给（生成模板时要分别填 \fancyhead[L]/[R]）
+    mid = pg.rect.width / 2
+    h_left = " ".join(t for _, x, t in sorted(head, key=lambda z: (z[1], z[0])) if x < mid)
+    h_right = " ".join(t for _, x, t in sorted(head, key=lambda z: (z[1], z[0])) if x >= mid)
+    head_y = min(y for y, _, _ in head) if head else None
+    foot_y = min(y for y, _, _ in foot) if foot else None
+    return (rows_to_line(head), rows_to_line(foot), h_left.strip(), h_right.strip(),
+            head_y, foot_y)
 
 
 def find_captions(doc, body_left=0.0, body_width=1.0):
@@ -221,7 +274,8 @@ def main():
     pw, ph = doc[0].rect.width, doc[0].rect.height
     size, leading, size_cands, font = body_font_and_leading(doc)
     ncol, g0, g1 = estimate_columns(doc)
-    head, foot = header_footer(doc)
+    head, foot, head_l, head_r, head_y, foot_y = header_footer(doc)
+    title_pt = title_font(doc)
 
     # 正文区 x 范围（排除页眉页脚）
     bw = doc[0].rect.width
@@ -230,6 +284,15 @@ def main():
           if bh * 0.10 < w[1] < bh * 0.90]
     body_left = min(a for a, _ in bx) if bx else 0.0
     body_right = max(b for _, b in bx) if bx else bw
+    # 版心上下边界（排除页眉页脚区域），生成模板时直接用
+    # 用页眉/页脚的实际 y 界定正文区：否则页脚页码会被算进正文，底边距偏小十几 pt
+    y_top = (head_y + 8) if head_y else bh * 0.09
+    y_bot = (foot_y - 6) if foot_y else bh * 0.94
+    bys = [(w[1], w[3]) for p in doc for w in p.get_text("words")
+           if y_top < w[1] < y_bot]
+    body_top = min(a for a, _ in bys) if bys else None
+    body_bottom = max(b for _, b in bys) if bys else None
+
     figs, tabs = find_captions(doc, body_left, body_right - body_left)
     boxes = figure_boxes(doc, figs)
 
@@ -242,12 +305,20 @@ def main():
         "page_size_pt": [round(pw, 2), round(ph, 2)],
         "columns": ncol,
         "gutter_pt": [round(g0, 1), round(g1, 1)] if g0 else None,
-        "margins_pt": {"left": round(left, 1), "right": round(right, 1)},
+        "margins_pt": {
+            "left": round(left, 1), "right": round(right, 1),
+            "top": round(body_top, 1) if body_top else None,
+            "bottom": round(ph - body_bottom, 1) if body_bottom else None,
+        },
+        "body_bbox_y": [round(body_top, 1), round(body_bottom, 1)] if body_top else None,
+        "title_font_pt": title_pt,
         "body_font_pt": size,
         "body_font_name": font,
         "body_font_candidates": size_cands,
         "leading_pt": leading,
         "header": head,
+        "header_left": head_l,
+        "header_right": head_r,
         "footer": foot,
         "figures": boxes,
         "tables": tabs,
