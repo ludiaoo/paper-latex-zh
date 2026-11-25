@@ -1,0 +1,167 @@
+% !TeX program = xelatex
+% ============================================================================
+% 论文中文译文模板（单栏 / Elsevier 风格）
+% 用法：
+%   1. 用 scripts/probe_layout.py 探测原 PDF，把下面的版式参数填进来
+%   2. 替换标题区与正文
+%   3. 用 scripts/build_check.py 编译校验
+% ============================================================================
+\documentclass[10pt]{ctexart}
+
+% ---------- 版式参数：按 probe_layout.py 的输出填写 ----------
+\newcommand{\PageW}{544.25pt}      % 页面宽
+\newcommand{\PageH}{742.68pt}      % 页面高
+\newcommand{\MargL}{39pt}          % 左边距
+\newcommand{\MargR}{42.5pt}        % 右边距
+\newcommand{\MargT}{64pt}          % 上边距（含页眉区）
+\newcommand{\MargB}{38pt}          % 下边距
+\newcommand{\HeadL}{Author et al.} % 页眉左
+\newcommand{\HeadR}{Journal Name (2026) 000000} % 页眉右
+
+\usepackage[
+  paperwidth=\PageW, paperheight=\PageH,
+  left=\MargL, right=\MargR, top=\MargT, bottom=\MargB,
+  headheight=12pt, headsep=16pt, footskip=26pt
+]{geometry}
+
+% ---------- 字体：中文宋/黑/楷 + 西文 Times + 公式 STIX ----------
+\usepackage{fontspec}
+\setmainfont{Times New Roman}
+\setsansfont{Arial}
+\setCJKmainfont{SimSun}
+\setCJKsansfont{SimHei}
+\setCJKfamilyfont{kai}{KaiTi}
+\newcommand{\kai}{\CJKfamily{kai}}
+\usepackage{unicode-math}
+\setmathfont{STIX Two Math}
+
+% ---------- 常用宏包 ----------
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{array}
+\usepackage{caption}
+\usepackage{float}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{fancyhdr}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage[hidelinks]{hyperref}
+
+\captionsetup{font=small, labelsep=quad}
+\setlist{nosep, leftmargin=1.6em}
+\floatname{algorithm}{算法}
+\renewcommand{\algorithmicrequire}{\textbf{输入：}}
+\renewcommand{\algorithmicensure}{\textbf{输出：}}
+
+% 行距：原文字号 9pt/行距 10.5pt 时，中文用 1.30 视觉密度接近
+\linespread{1.30}
+
+% ---------- 页眉页脚 ----------
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\footnotesize\itshape \HeadL}
+\fancyhead[R]{\footnotesize\itshape \HeadR}
+\fancyfoot[C]{\footnotesize\thepage}
+\renewcommand{\headrulewidth}{0pt}
+\fancypagestyle{plain}{%
+  \fancyhf{}%
+  \fancyhead[L]{\footnotesize\itshape \HeadL}%
+  \fancyhead[R]{\footnotesize\itshape \HeadR}%
+  \fancyfoot[C]{\footnotesize\thepage}%
+  \renewcommand{\headrulewidth}{0pt}%
+}
+
+% ---------- 标题层级（仿期刊：黑体、左对齐、编号 1 / 1.1 / 1.1.1） ----------
+\ctexset{
+  section/format       = \raggedright\heiti\fontsize{11.5pt}{14pt}\selectfont,
+  section/aftername    = \quad,
+  section/beforeskip   = 14pt plus 2pt minus 2pt,
+  section/afterskip    = 8pt plus 1pt,
+  subsection/format    = \raggedright\heiti\fontsize{10.5pt}{13pt}\selectfont,
+  subsection/aftername = \quad,
+  subsection/beforeskip= 10pt plus 1pt,
+  subsection/afterskip = 6pt,
+  subsubsection/format = \raggedright\heiti\fontsize{10pt}{12.5pt}\selectfont,
+  subsubsection/aftername = \quad,
+  subsubsection/beforeskip = 8pt,
+  subsubsection/afterskip  = 5pt,
+}
+\setlength{\parindent}{1.2em}
+\setlength{\parskip}{0pt}
+
+\begin{document}
+
+% ================= 标题区 =================
+\begin{flushleft}
+  {\heiti\fontsize{20pt}{25pt}\selectfont
+   中文标题第一行：副标题前的主标题\\[2pt]
+   中文标题第二行\par}
+\end{flushleft}
+
+\vspace{8pt}
+{\noindent\fontsize{11pt}{14pt}\selectfont
+作者一\textsuperscript{a}，作者二\textsuperscript{a}，作者三\textsuperscript{b,*}\par}
+
+\vspace{6pt}
+{\noindent\footnotesize\kai\raggedright
+\textsuperscript{a}~单位一，城市；\quad
+\textsuperscript{b}~单位二，城市\par}
+
+\vspace{4pt}
+\hrule height 0.4pt
+\vspace{6pt}
+
+% ================= 关键词 + 摘要（双栏） =================
+\noindent
+\begin{minipage}[t]{0.26\textwidth}
+  \vspace{0pt}
+  {\footnotesize\heiti 文章信息\par}
+  \vspace{3pt}\hrule height 0.3pt\vspace{4pt}
+  {\footnotesize\heiti 关键词：\par}
+  \vspace{2pt}
+  {\footnotesize 关键词一\\关键词二\\关键词三\par}
+\end{minipage}%
+\hfill
+\begin{minipage}[t]{0.70\textwidth}
+  \vspace{0pt}
+  {\footnotesize\heiti 摘\quad 要\par}
+  \vspace{3pt}\hrule height 0.3pt\vspace{4pt}
+  {\footnotesize 摘要正文……\par}
+\end{minipage}
+
+\vspace{6pt}
+\hrule height 0.4pt
+\vspace{10pt}
+
+% ================= 正文 =================
+\section{引言}
+
+正文段落。首次出现图表时引用 \ref{fig:demo} 与表 \ref{tab:demo}。
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.86\textwidth]{figs/fig1.png}
+  \caption{示例图题}
+  \label{fig:demo}
+\end{figure}
+
+\begin{table}[htbp]
+  \centering
+  \caption{示例表题}
+  \label{tab:demo}
+  \footnotesize
+  \begin{tabular}{@{}llr@{}}
+    \toprule
+    列一 & 列二 & 数值 \\
+    \midrule
+    A & 说明 & 1.00 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\input{refs}
+
+\end{document}

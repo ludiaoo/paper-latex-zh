@@ -1,0 +1,105 @@
+% !TeX program = xelatex
+% ============================================================================
+% 中文 Word 论文 / 报告模板（A4 单栏，Word 默认版式）
+% 适用：学位论文初稿、课程论文、开题报告、技术报告等由 Word 撰写的文档
+% 用法：
+%   1. python scripts/docx2tex.py thesis.docx --out build_tex --template cn-a4
+%      （脚本会把 body.tex 的 \input 插到本文件的 BODY 标记处）
+%   2. 或手动把本文件复制为 main.tex，在 BODY 标记处写 \input{body}
+% ============================================================================
+\documentclass[12pt]{ctexart}
+
+% ---------- 版面：Word 默认 A4，上下 2.54 cm、左右 3.18 cm ----------
+\usepackage[
+  a4paper,
+  top=2.54cm, bottom=2.54cm,
+  left=3.18cm, right=3.18cm,
+  headheight=14pt, headsep=12pt, footskip=22pt
+]{geometry}
+
+% ---------- 字体：正文宋体小四，标题黑体 ----------
+\usepackage{fontspec}
+\setmainfont{Times New Roman}
+\setCJKmainfont{SimSun}
+\setCJKsansfont{SimHei}
+\setCJKfamilyfont{hei}{SimHei}
+\setCJKfamilyfont{kai}{KaiTi}
+\newcommand{\hei}{\CJKfamily{hei}}
+\newcommand{\kai}{\CJKfamily{kai}}
+\usepackage{unicode-math}
+\setmathfont{STIX Two Math}
+
+% ---------- 段落：首行缩进 2 字符，1.5 倍行距（Word 常用）----------
+\linespread{1.5}
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0pt}
+
+% ---------- 标题层级：黑体，字号依次 16 / 14 / 13 / 12 ----------
+\ctexset{
+  section = {
+    format     = \hei\fontsize{16pt}{20pt}\selectfont\raggedright,
+    beforeskip = 12pt plus 2pt minus 2pt,
+    afterskip  = 6pt plus 1pt,
+    name       = {},
+    number     = \arabic{section},
+  },
+  subsection = {
+    format     = \hei\fontsize{14pt}{18pt}\selectfont\raggedright,
+    beforeskip = 10pt plus 2pt minus 2pt,
+    afterskip  = 4pt plus 1pt,
+  },
+  subsubsection = {
+    format     = \hei\fontsize{13pt}{16pt}\selectfont\raggedright,
+    beforeskip = 8pt plus 1pt minus 1pt,
+    afterskip  = 3pt plus 1pt,
+  },
+  paragraph = {
+    format     = \hei\fontsize{12pt}{15pt}\selectfont,
+    beforeskip = 6pt, afterskip = 2pt,
+  },
+}
+
+% ---------- 页眉页脚：页脚居中页码 ----------
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{}
+\renewcommand{\headrulewidth}{0pt}
+\fancyfoot[C]{\small\thepage}
+
+% ---------- 常用宏包 ----------
+\usepackage{graphicx}
+\usepackage{amsmath}
+% 注意：不要加载 amssymb —— 与 unicode-math 冲突（\eth already defined）
+\usepackage{booktabs}
+\usepackage{calc}             % pandoc 的 longtable 列宽用 \real{...}，需要 calc
+\usepackage{longtable}        % pandoc 的表格默认输出 longtable
+\usepackage{array}
+\usepackage{multirow}
+\usepackage{caption}
+\usepackage{float}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage[hidelinks]{hyperref}
+\usepackage{xurl}           % 长 URL 可任意断行，否则 Word 里的超链接会 Overfull
+
+\captionsetup{font=small, labelsep=quad}
+\setlist{nosep, leftmargin=2em}
+% Word 的复选框/对勾：unicode-math 不提供 \square，改用不依赖字形的画法
+\usepackage{pifont}
+\providecommand{\cbox}{\fbox{\phantom{X}}}          % 空复选框
+\providecommand{\cboxc}{\fbox{\ding{51}}}          % 已勾选
+\providecommand{\filledbox}{\rule{0.62em}{0.62em}} % 实心方块
+% pandoc 会在紧凑列表前插入 \tightlist；未定义会直接编译失败
+\providecommand{\tightlist}{\setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+% pandoc 用 \pandocbounded 包图片，2.10 之前没有该命令
+\providecommand{\pandocbounded}[1]{#1}
+
+\title{}
+\author{}
+\date{}
+
+\begin{document}
+
+% >>> BODY：docx2tex.py 会在此插入 \input{body}
+
+\end{document}

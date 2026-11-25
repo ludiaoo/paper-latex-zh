@@ -1,0 +1,123 @@
+% !TeX program = xelatex
+% ============================================================================
+% 论文中文译文模板（双栏 / 中文期刊风格，参照高校学报双栏版式）
+% 适用：华南理工大学学报、中文核心期刊一类的双栏投稿版式
+% 用法：先用 scripts/probe_layout.py 量出版心与栏宽，改下面的参数
+% ============================================================================
+\documentclass[10pt,twocolumn]{ctexart}
+
+% ---------- 版式参数 ----------
+\newcommand{\PaperW}{210mm}
+\newcommand{\PaperH}{297mm}
+\newcommand{\MargL}{25mm}
+\newcommand{\MargR}{25mm}
+\newcommand{\MargT}{28mm}
+\newcommand{\MargB}{25mm}
+\newcommand{\ColSep}{7mm}      % 栏间距（实测两栏间空白）
+
+\usepackage[
+  paperwidth=\PaperW, paperheight=\PaperH,
+  left=\MargL, right=\MargR, top=\MargT, bottom=\MargB,
+  columnsep=\ColSep
+]{geometry}
+
+% ---------- 字体 ----------
+\usepackage{fontspec}
+\setmainfont{Times New Roman}
+\setsansfont{Arial}
+\setCJKmainfont{SimSun}
+\setCJKsansfont{SimHei}
+\setCJKfamilyfont{kai}{KaiTi}
+\newcommand{\kai}{\CJKfamily{kai}}
+\usepackage{unicode-math}
+\setmathfont{STIX Two Math}
+
+% ---------- 宏包 ----------
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{array}
+\usepackage{caption}
+\usepackage{float}
+\usepackage{enumitem}
+\usepackage[hidelinks]{hyperref}
+
+\captionsetup{font=small, labelsep=quad}
+\setlist{nosep, leftmargin=1.5em}
+
+% 双栏正文行距略紧，中文 10pt 用 1.22
+\linespread{1.22}
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0pt}
+
+% ---------- 标题层级 ----------
+\ctexset{
+  section/format       = \raggedright\heiti\fontsize{11pt}{13pt}\selectfont,
+  section/aftername    = \quad,
+  section/beforeskip   = 10pt plus 2pt,
+  section/afterskip    = 5pt,
+  subsection/format    = \raggedright\heiti\fontsize{10pt}{12pt}\selectfont,
+  subsection/aftername = \quad,
+  subsection/beforeskip= 8pt,
+  subsection/afterskip = 4pt,
+  subsubsection/format = \raggedright\heiti\fontsize{10pt}{12pt}\selectfont,
+  subsubsection/aftername = \quad,
+}
+
+% 页码
+\pagestyle{plain}
+
+\begin{document}
+
+% ================= 通栏标题区 =================
+\twocolumn[{%
+\begin{center}
+  {\heiti\fontsize{18pt}{22pt}\selectfont 中文标题（不超过 20 字为宜）\par}
+  \vspace{6pt}
+  {\fontsize{10.5pt}{13pt}\selectfont 作者一\textsuperscript{1}，作者二\textsuperscript{1}，作者三\textsuperscript{2}\par}
+  \vspace{4pt}
+  {\footnotesize\kai
+   （1. 单位一，城市 邮编；2. 单位二，城市 邮编）\par}
+  \vspace{8pt}
+  \begin{minipage}{0.92\textwidth}
+    \footnotesize
+    \noindent\textbf{摘\quad 要：}摘要正文，楷体，约 200–300 字。\par
+    \vspace{3pt}
+    \noindent\textbf{关键词：}关键词一；关键词二；关键词三\par
+    \vspace{3pt}
+    \noindent\textbf{中图分类号：}TP301\quad\textbf{文献标志码：}A
+  \end{minipage}
+\end{center}
+\vspace{6pt}
+}]
+
+% ================= 双栏正文 =================
+\section{引言}
+
+双栏正文。通栏图用 \texttt{figure*}，通栏表用 \texttt{table*}。
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\linewidth]{figs/fig1.png}
+  \caption{单栏图示例}
+  \label{fig:one}
+\end{figure}
+
+\begin{table}[htbp]
+  \centering
+  \caption{单栏表示例}
+  \label{tab:one}
+  \footnotesize
+  \begin{tabular}{@{}lrr@{}}
+    \toprule
+    参数 & 取值 & 单位 \\
+    \midrule
+    $Q$ & 200 & kg \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\input{refs}
+
+\end{document}
