@@ -104,6 +104,12 @@ python <skill>/scripts/build_check.py main.tex --preview 1
 - 术语首次出现给"中文（English）"，之后统一用中文；
 - 图表编号交给 LaTeX 自动生成，`\caption` 里不写"图 N"。
 
+转表三步（少一列比多数一列难发现得多）：
+1. 先把源表列数写进源码注释：`% 源表 15 列：ε, Scale, 6×2, t̄`；
+2. 再用 `pdftotext -layout` 抽出原表数据行，与 tabular 逐格对照；
+3. 最后用 `check_tables.py` 机械核对列数，并核对表头译文与原表列名一一对应。
+宽表优先降字号（`\scriptsize`）或拆表，**不要删列**；原表的加粗/斜体（如"每算例优解加粗"）要保留。
+
 ### 第 6 步：验收
 
 ```bash
@@ -114,7 +120,11 @@ python <skill>/scripts/build_check.py main.tex --preview 1,10,20
 - 退出码 0，无 `!` 错误；
 - Overfull hbox / vbox 为 0（或 < 3 pt 且不影响阅读）；
 - 图 / 表 / 公式编号连续，且数量与原文一致；
-- 页数为原文的 0.9–1.3 倍。
+- 页数为原文的 0.9–1.3 倍；
+- 每个表格的列数与源表一致（`check_tables.py`），表头文字逐项对应；
+- 原表的粗体、斜体强调标记保留（"每算例优解加粗"这类规则不能丢）；
+- 每张图四边完整，轴标题、刻度、图例、色标标题都在框内（`verify_figures.py` + 裁图边缘警告）；
+- 跨页表的表头重复，longtable 的 `\endhead` 齐全。
 
 再抽 3–5 页与原页肉眼比对，确认图题在图下、表题在表上、页眉页脚正确。
 
@@ -171,14 +181,16 @@ python <skill>/scripts/build_check.py build_tex/main.tex --preview 1,2
 | `scripts/probe_layout.py` | 实测页面/栏数/栏距/字号/行距/页眉页脚/标题字号，定位图表 bbox |
 | `scripts/detect_venue.py` | DOI + 元数据 + 首页横幅 → 出版方、期刊、可用文档类 |
 | `scripts/make_template.py` | 按实测参数生成 main.tex（replica / official 两种模式） |
-| `scripts/crop_figures.py` | 按 bbox 批量裁剪插图；支持 `--rect` 手动修正 |
+| `scripts/crop_figures.py` | 按 bbox 批量裁剪插图；支持 `--rect` 手动修正；裁完自动做边缘墨迹检查 |
+| `scripts/verify_figures.py` | 核对 bbox 是否盖住全部内容，输出可复制的 `--rect` |
+| `scripts/check_tables.py` | 核对译文表格列数与源表，附源表表头 |
 | `scripts/docx2tex.py` | Word → LaTeX：pandoc + 媒体扁平化 + 表格修复 + 生成 main.tex |
 | `scripts/build_check.py` | 编译两遍 + 校验编号连续性/溢出 + 渲染预览 |
 | `assets/main-single.tex` | 单栏模板（兜底用；能用 make_template 生成就不用它） |
 | `assets/main-twocol.tex` | 双栏模板（中文高校学报类，通栏标题 + 双栏正文） |
 | `assets/main-cn-a4.tex` | 中文 A4 单栏模板（Word 默认版式，宋体小四 / 1.5 倍行距） |
 | `references/layout-metrics.md` | 版式参数换算表与两类期刊的实测值 |
-| `references/pitfalls.md` | 已知坑与对策（PDF 版式 14 类 + Word 转换 6 类） |
+| `references/pitfalls.md` | 已知坑与对策（版式 17 类 + Word 转换 6 类） |
 | `README.md` | 给人看的说明：安装、依赖、快速开始、已知限制 |
 
 ## 硬性要求
@@ -200,6 +212,6 @@ python <skill>/scripts/build_check.py build_tex/main.tex --preview 1,2
 
 PDF 路径按 `references/pitfalls.md` 顺序排查：图号错位 → 图题误判 → 同页多图 → 纯位图 →
 字号误判 → 页眉缺失 → 浮动体空白 → 字体警告 → 宽表溢出 → URL 溢出 → 算法块溢出 →
-pt/bp 单位 → 双栏误判。
+pt/bp 单位 → 双栏误判 → 图边缘被切 → 表格少列。
 
 Word 路径按同一文件末尾五条排查：WMF 公式 → 下划线不换行 → 嵌套表格 → 图片超宽 → 编号被重排。

@@ -94,19 +94,61 @@ def main():
             m = re.search(r"Pages:\s+(\d+)", info.stdout)
             pages = int(m.group(1)) if m else None
 
-    # 结构编号：从 PDF 抽取文本核对
+    # ---------- 结构编号 ----------
+    # 早期做法是从 PDF 全文正则抓「图 N」，正文里的「如图 8 所示」也会被算作编号，
+    # 于是少插一张图仍可能报「缺 无」——这是假阳性通过。
+    # 改为优先读 .aux 的 \newlabel（只统计真正打过 \label 的浮动体）。
     fig_ids = tab_ids = eq_ids = []
-    if pdf.exists():
+    label_src = None
+    aux = tex.with_suffix(".aux")
+    if aux.exists():
+        atxt = aux.read_text(encoding="utf-8", errors="replace")
+        fig_ids = sorted({int(m) for m in re.findall(r"\\newlabel\{fig:[^}]*\}\{\{(\d+)\}", atxt)})
+        tab_ids = sorted({int(m) for m in re.findall(r"\\newlabel\{tab:[^}]*\}\{\{(\d+)\}", atxt)})
+        eq_ids = sorted({int(m) for m in re.findall(r"\\newlabel\{eq:[^}]*\}\{\{(\d+)\}", atxt)})
+        if fig_ids or tab_ids:
+            label_src = "aux"
+
+    # 源码里的环境计数：没有 .aux 时至少能核对 float 与 caption 是否成对
+    src_tex = ""
+    for f in sorted(tex.parent.glob("*.tex")):
+        src_tex += f.read_text(encoding="utf-8", errors="replace") + "\n"
+    src_fig = len(re.findall(r"\\begin\{figure\*?\}", src_tex))
+    src_tab = len(re.findall(r"\\begin\{table\*?\}", src_tex))
+    src_cap = len(re.findall(r"\\caption\{", src_tex))
+
+    if label_src is None and pdf.exists():
         try:
             import pymupdf
             d = pymupdf.open(pdf)
             txt = "\n".join(p.get_text() for p in d)
+            pages_info = []
+            repl = 0
+            for i, pg in enumerate(d):
+                t = pg.get_text()
+                pages_info.append((i + 1, len(t.strip()), len(pg.get_images(full=True))))
+                repl += t.count("\ufffd")
             d.close()
         except Exception:
             txt = ""
-        fig_ids = numbers(r"图\s*(\d+)", txt)
-        tab_ids = numbers(r"表\s*(\d+)", txt)
         eq_ids = numbers(r"\((\d{1,2})\)\s*$", txt)
+
+    # ---------- 页面体检：近空白页与替换字符 ----------
+    near_blank, repl_total, pages_audited = [], 0, 0
+    if pdf.exists():
+        try:
+            import pymupdf
+            d = pymupdf.open(pdf)
+            for i, pg in enumerate(d):
+                t = pg.get_text()
+                chars = len(t.strip())
+                repl_total += t.count("\ufffd")
+                if chars < 120 and not pg.get_images(full=True):
+                    near_blank.append((i + 1, chars))
+            pages_audited = d.page_count
+            d.close()
+        except Exception:
+            pass
 
     ok = code == 0 and not errors and not over_h and not over_v
     print(f"\n退出码      : {code}")
@@ -118,6 +160,12 @@ def main():
     print(f"Overfull v  : {len(over_v)}" + (f"  ({', '.join(over_v[:6])} pt)" if over_v else ""))
     print(f"未定义引用  : {'是' if undef else '否'}")
 
+    print(f"页面体检    : 近空白 {len(near_blank)} 页"
+          + (f"（{', '.join(str(p) for p, _ in near_blank[:8])}）" if near_blank else "")
+          + f"，替换字符 {repl_total} 个")
+    if repl_total:
+        print("              替换字符说明有字形缺字（U+FFFD），检查字体或缺字字符")
+
     def check_seq(name, ids):
         if not ids:
             print(f"{name}编号     : 未检出（若文中确实没有可忽略）")
@@ -126,10 +174,20 @@ def main():
         print(f"{name}编号     : {ids[0]}–{ids[-1]}，缺 {miss if miss else '无'}")
         return not miss
 
-    if pdf.exists():
+    if label_src == "aux":
+        print(f"编号来源    : .aux 的 \\newlabel（源码里 figure {src_fig} 个、table {src_tab} 个、caption {src_cap} 个）")
         ok = check_seq("图", fig_ids) and ok
         ok = check_seq("表", tab_ids) and ok
         ok = check_seq("公式", eq_ids) and ok
+    else:
+        print(f"编号来源    : 无 .aux，改查源码计数（figure {src_fig} 个、table {src_tab} 个、caption {src_cap} 个）")
+        if src_fig != src_cap - src_tab:
+            print(f"              figure+caption 不成对，可能有图被漏插或 caption 写漏"
+                  f"（应为 figure {src_fig} = caption {src_cap} − table {src_tab}）")
+            ok = False
+        ok = check_seq("公式", eq_ids) and ok
+    if repl_total:
+        ok = False
 
     if args.preview and pdf.exists():
         pages_wanted = [p.strip() for p in args.preview.split(",") if p.strip()]

@@ -40,6 +40,37 @@ def parse_rects(items):
     return out
 
 
+def edge_ink(pix, band: int = 3, white: int = 240) -> dict[str, float]:
+    """统计四边各 band 像素宽的非白占比，判断裁剪是否切到了内容。
+
+    直接用内存里的 Pixmap.samples，不落盘再读回；RGB 三通道都 >240 才算白。
+    返回 {"上": x, "下": x, "左": x, "右": x}。
+    """
+    w, h, n = pix.width, pix.height, pix.n
+    s = pix.samples
+    step = 1
+
+    def nonwhite(x: int, y: int) -> bool:
+        i = (y * w + x) * n
+        return not (s[i] > white and s[i + 1] > white and s[i + 2] > white)
+
+    def ratio(points) -> float:
+        total = 0
+        hit = 0
+        for x, y in points:
+            total += 1
+            if nonwhite(x, y):
+                hit += 1
+        return hit / total if total else 0.0
+
+    band = max(1, min(band, h // 4 or 1, w // 4 or 1))
+    top = ((x, y) for y in range(band) for x in range(0, w, step))
+    bottom = ((x, y) for y in range(h - band, h) for x in range(0, w, step))
+    left = ((x, y) for x in range(band) for y in range(0, h, step))
+    right = ((x, y) for x in range(w - band, w) for y in range(0, h, step))
+    return {"上": ratio(top), "下": ratio(bottom), "左": ratio(left), "右": ratio(right)}
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("pdf")
@@ -71,6 +102,11 @@ def main():
         path = outdir / f"fig{n}.png"
         pix.save(path)
         done.append((n, pno, pix.width, pix.height, path))
+        # 边缘墨迹检查：bbox 少算几 pt 时，图的轴标题会被切掉一截，
+        # 裁剪结果本身看着"有图"，但边上还留着内容。四边各取 3px 带统计非白占比。
+        for side, frac in edge_ink(pix).items():
+            if frac > 0.02:
+                print(f"[warn] fig{n} {side}边缘 {frac:.1%} 非白，可能切到内容，核对 {path}")
 
     for n, pno, w, h, path in done:
         print(f"Fig.{n:<2d} p{pno:<2d} {w}x{h}  -> {path}")

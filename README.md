@@ -57,7 +57,7 @@ python scripts/make_template.py layout.json --venue venue.json --out main.tex
 | 字号行距 | 中文 10 pt / 行距 1.30 |
 | 页眉页脚 | 左 `S. Zhou et al.` 斜体、右期刊卷期、页脚居中页码 |
 | 公式 | (1)–(42) 编号逐条与原版对齐 |
-| 图 / 表 | 图 1–13、表 1–11 编号全对齐，图按 300 dpi 从原 PDF 裁出 |
+| 图 / 表 | 图 1–13 逐张核对过边缘与图内标签，表 1–11 逐列核对过列数与表头；图按 300 dpi 从原 PDF 裁出 |
 | 参考文献 | 58 条，作者—年份格式 + 悬挂缩进 |
 
 **不做**的事：不复刻出版社横幅、logo、DOI 页脚；不重绘图内文字（保留原图英文）。
@@ -140,7 +140,7 @@ python ~/.workbuddy/skills/paper-latex-zh/scripts/build_check.py build_tex/main.
 
 ---
 
-## 六个脚本
+## 八个脚本
 
 ### `probe_layout.py` — 版式测绘
 
@@ -310,6 +310,8 @@ paper-latex-zh/
 │   ├── probe_layout.py           # 版式测绘 + 图表定位（PDF 路径）
 │   ├── crop_figures.py           # 批量裁图（PDF 路径）
 │   ├── detect_venue.py           # 识别期刊/出版方与可用文档类
+│   ├── verify_figures.py         # 图 bbox 是否盖住全部内容
+│   ├── check_tables.py           # 表格列数与表头核对
 │   ├── make_template.py          # 按实测参数生成 main.tex
 │   ├── docx2tex.py               # Word → LaTeX（Word 路径）
 │   └── build_check.py            # 编译校验（两条路径共用）
@@ -319,7 +321,7 @@ paper-latex-zh/
 │   └── main-cn-a4.tex            # A4 中文论文模板（Word 默认版式）
 └── references/
     ├── layout-metrics.md         # 版式参数换算表 + 两类期刊实测值
-    └── pitfalls.md               # 14 条 PDF 坑 + 6 条 Word 坑 + 版权合规
+    └── pitfalls.md               # 23 条坑（版式 17 + Word 6）+ 版权合规
 ```
 
 ---

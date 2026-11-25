@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import re
 import sys
 from pathlib import Path
 
@@ -70,6 +71,28 @@ def font_cmd(cmd: str, chain: list[str]) -> str:
     return inner
 
 
+def localize_header(header_left: str, header_right: str) -> str:
+    """把原文英文 running head 变成中文默认值，如 "S. Zhou et al." → "Zhou 等（2026）"。
+
+    只做保守替换：取作者姓氏 + 等；年份从右页眉的 (20xx) 里取，取不到就不写。
+    """
+    left = (header_left or "").strip()
+    year = ""
+    m = re.search(r"\((\d{4})\)", header_right or "")
+    if m:
+        year = m.group(1)
+    if not left:
+        return ""
+    # 去掉 et al. 之类的尾巴，取第一作者
+    core = re.split(r"\bet\s+al\.?|\band\b|,", left)[0].strip()
+    tokens = [t for t in re.split(r"\s+", core) if t]
+    surname = tokens[-1] if tokens else ""
+    surname = re.sub(r"[^A-Za-z\-\u4e00-\u9fff]", "", surname)
+    if not surname:
+        return ""
+    return f"{surname} 等" + (f"（{year}）" if year else "")
+
+
 def build_replica(L: dict, V: dict | None, args) -> str:
     size = nearest_size(args.size or L.get("body_font_pt"))
     cols = args.columns or int(L.get("columns") or 1)
@@ -92,6 +115,17 @@ def build_replica(L: dict, V: dict | None, args) -> str:
 
     head_l = args.header_left if args.header_left is not None else (L.get("header_left") or "")
     head_r = args.header_right if args.header_right is not None else (L.get("header_right") or "")
+    # 默认照抄原文（多为英文 running head）。--header-zh 换成中文，--keep-en-header 保持原样
+    if getattr(args, "header_zh", False) and not getattr(args, "keep_en_header", False):
+        zh = localize_header(head_l, head_r)
+        if zh:
+            head_l = zh
+            m = re.search(r"\(\d{4}\)", head_r or "")
+            head_r = (V or {}).get("journal") or ""
+            if head_r and m:
+                head_r = f"{head_r}（{m.group(1)}）"
+            elif head_r:
+                head_r = head_r
     jorn = (V or {}).get("journal") or ""
     src = f"{jorn}，" if jorn else ""
     src += "实测参数复刻" if not V else f"来源 {V.get('publisher','未知')}，按实测参数复刻"
@@ -140,7 +174,7 @@ def build_replica(L: dict, V: dict | None, args) -> str:
         lines += [
             "\\renewcommand{\\headrulewidth}{0pt}",
             f"\\fancyhead[L]{{\\footnotesize\\itshape {head_l}}}" if head_l else "",
-            f"\\fancyhead[R]{{\\footnotesize {head_r}}}" if head_r else "",
+            f"\\fancyhead[R]{{\\footnotesize\\itshape {head_r}}}" if head_r else "",
         ]
     else:
         lines.append("\\renewcommand{\\headrulewidth}{0pt}")
@@ -252,6 +286,10 @@ def main():
     ap.add_argument("--columns", type=int, default=None, choices=[1, 2])
     ap.add_argument("--latin-font", default=None)
     ap.add_argument("--cjk-font", default=None)
+    ap.add_argument("--header-zh", action="store_true",
+                    help="把页眉改成中文默认值（作者等（年份））；默认照抄原文英文 running head")
+    ap.add_argument("--keep-en-header", action="store_true",
+                    help="保留英文页眉（与 --header-zh 同给时以此为准）")
     ap.add_argument("--header-left", default=None)
     ap.add_argument("--header-right", default=None)
     args = ap.parse_args()

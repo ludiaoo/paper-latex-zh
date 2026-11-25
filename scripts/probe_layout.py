@@ -223,13 +223,74 @@ def find_captions(doc, body_left=0.0, body_width=1.0):
     return figs, tabs
 
 
-def figure_boxes(doc, figs, pad=2.0):
-    """按图题 y 分段聚合矢量对象，得到每张图的 bbox。
+def add_table_structure(doc, tabs):
+    """给每个表题配上表结构（列数/行数/表头），供 check_tables.py 核对列数。
+
+    find_tables() 比较慢，按页缓存；老版本 pymupdf 没有该接口时写 null 并提示，
+    不抛异常——没有它只是少了列数校验，不影响其他功能。
+    """
+    has_api = hasattr(pymupdf.Page, "find_tables")
+    if not has_api:
+        print("提示：当前 pymupdf 无 find_tables()，表格列数记为 null（升级 pymupdf 可启用列数校验）")
+        return [{**t, "ncols": None, "nrows": None} for t in tabs]
+
+    by_page: dict[int, list] = {}
+    for t in tabs:
+        by_page.setdefault(t["page"], []).append(t)
+    out = []
+    for pno, items in by_page.items():
+        pg = doc[pno - 1]
+        try:
+            found = pg.find_tables().tables
+        except Exception:
+            found = []
+        items.sort(key=lambda x: x["y"])
+        used: set[tuple] = set()          # 同一张表不能配给两个表题（表 6/表 7 曾重复命中）
+        for it in items:
+            cap_y = it["y"]
+            # 题注可能在表上方（多数期刊）也可能在下方，取距题注最近的那个表；
+            # 早期按「表底在题注之上」筛，正好把题注在上、表在下的情况全排除了
+            def dist(tb):
+                if tb.bbox[1] >= cap_y - 2:
+                    return tb.bbox[1] - cap_y
+                if tb.bbox[3] <= cap_y + 2:
+                    return cap_y - tb.bbox[3]
+                return 0.0
+            cands = [t for t in found
+                     if dist(t) <= 140 and tuple(round(v, 1) for v in t.bbox) not in used]
+            if not cands:
+                out.append({**it, "ncols": None, "nrows": None})
+                continue
+            t = min(cands, key=dist)
+            used.add(tuple(round(v, 1) for v in t.bbox))
+            try:
+                rows = t.extract()
+            except Exception:
+                rows = []
+            header = [str(c) for c in (rows[0][:6] if rows else [])]
+            # 表头几乎全空、或行数过少时，find_tables 的列数不可信（无框线表常被切错），
+            # 宁可给 null 让 check_tables 跳过，也不要报一个假的不符
+            filled = sum(1 for c in header if str(c).strip())
+            if filled < 2 or int(t.row_count) < 3:
+                out.append({**it, "ncols": None, "nrows": int(t.row_count),
+                            "table_bbox": [round(v, 1) for v in t.bbox],
+                            "header": header, "note": "表头不清，列数不可信"})
+                continue
+            out.append({**it, "ncols": int(t.col_count), "nrows": int(t.row_count),
+                        "table_bbox": [round(v, 1) for v in t.bbox], "header": header})
+    return out
+
+
+def figure_boxes(doc, figs, pad=5.0):
+    """按图题 y 分段聚合「矢量对象 + 文本行」，得到每张图的 bbox。
 
     关键点（踩坑记录）：
     - 不能用 search_for("Fig. N.") 找图题，它会命中正文里的引用；
     - 同页多图必须按图题 y 分段，否则会把相邻两张图连成一个 bbox；
-    - 图内文字可能是位图，get_text 抓不到，只能靠 get_drawings。
+    - 不能按尺寸过滤矢量对象：Elsevier 图的刻度字形高约 2.8pt、宽约 4.8pt，
+      用 width>4 会把它们筛掉，bbox 只剩坐标轴框，左边界少 20pt 以上；
+    - 图内文字可能是可选中文本而不是路径，只聚合 get_drawings 会漏掉轴标题；
+    - pad 至少 5pt：2pt 在 300dpi 下只有 8px，切边很常见。
     """
     by_page: dict[int, list[dict]] = {}
     for f in figs:
@@ -238,20 +299,75 @@ def figure_boxes(doc, figs, pad=2.0):
     for pno, items in by_page.items():
         items.sort(key=lambda x: x["y"])
         pg = doc[pno - 1]
-        drawings = [d["rect"] for d in pg.get_drawings()
-                    if d["rect"].width > 4 and d["rect"].height > 4]
+        h = pg.rect.height
+        page_area = pg.rect.width * h
+        rects = []
+        for d in pg.get_drawings():
+            r = d["rect"]
+            if r.width <= 0.5 and r.height <= 0.5:
+                continue
+            if r.width * r.height > page_area * 0.7:      # 整页背景框
+                continue
+            if r.y1 < h * 0.06 or r.y0 > h * 0.94:        # 页眉页脚区
+                continue
+            rects.append(r)
+        lines = []
+        for blk in page_text_dict(pg).get("blocks", []):
+            if blk.get("type") == 1:          # 图片块：合成图里的小图标常是位图，不聚合就会切边
+                b = blk.get("bbox")
+                if not b:
+                    continue
+                bw, bh_ = b[2] - b[0], b[3] - b[1]
+                if bw * bh_ > page_area * 0.7:
+                    continue
+                rects.append(pymupdf.Rect(*b))
+                continue
+            for ln in blk.get("lines", []):
+                lines.append(ln["bbox"])
+
         prev_y = 40.0
         for it in items:
             cap_y = it["y"]
-            sel = [r for r in drawings if r.y1 <= cap_y - 1 and r.y0 >= prev_y - 2]
+            band_top = prev_y
+            sel = [r for r in rects if r.y1 <= cap_y - 1 and r.y0 >= band_top - 2]
             prev_y = cap_y
             if len(sel) < 3:      # 矢量对象太少，可能是纯位图，留空待人工确认
                 out.append({**it, "bbox": None, "note": "vector objects too few"})
                 continue
-            x0 = min(r.x0 for r in sel); y0 = min(r.y0 for r in sel)
-            x1 = max(r.x1 for r in sel); y1 = cap_y - 1
+            # 先用"大对象"（坐标轴框这类）做锚点，再向外吸收小对象与文本行。
+            # 不能直接拿全部对象求并集：同页上方的表格会把 bbox 拉高上百 pt；
+            # 也不能按垂直空隙切簇：多子图之间本身就有 25pt 以上留白。
+            anchor = [r for r in sel if r.width > 4 and r.height > 4]
+            if len(anchor) < 3:
+                anchor = sel
+            x0 = min(r.x0 for r in anchor); y0 = min(r.y0 for r in anchor)
+            x1 = max(r.x1 for r in anchor); y1 = max(r.y1 for r in anchor)
+            ax0, ax1 = x0, x1                   # 锚点的横向范围，用于判定"在图内"
+            # 只扩一圈、不迭代：迭代会让表格线把 bbox 一路往上带（Fig.8 上方是 Table 9）
+            for _ in range(1):
+                for r in sel:
+                    # 横向在图内的对象（色标标题、子图注）允许向上吸 25pt；
+                    # 横向超出图范围的（同页上方整宽表格线）只给 12pt，避免吞表
+                    inside = r.x0 >= ax0 - 5 and r.x1 <= ax1 + 5
+                    vpad = 25 if inside else 12
+                    if (r.x1 < x0 - 28 or r.x0 > x1 + 28
+                            or r.y1 < y0 - vpad or r.y0 > y1 + vpad):
+                        continue
+                    x0 = min(x0, r.x0); y0 = min(y0, r.y0)
+                    x1 = max(x1, r.x1); y1 = max(y1, r.y1)
+                for b in lines:
+                    if b[1] < band_top - 2 or b[3] > cap_y - 1:
+                        continue
+                    # 用行框中点判定，口径与 verify_figures.py 一致；
+                    # 用边缘判定会漏掉"中心在带内、但顶端略高"的行
+                    cy = (b[1] + b[3]) / 2
+                    if (b[2] < x0 - 28 or b[0] > x1 + 28
+                            or not (y0 - 12 <= cy <= y1 + 12)):
+                        continue
+                    x0 = min(x0, b[0]); y0 = min(y0, b[1])
+                    x1 = max(x1, b[2]); y1 = max(y1, b[3])
             out.append({**it, "bbox": [round(x0 - pad, 1), round(y0 - pad, 1),
-                                       round(x1 + pad, 1), round(y1, 1)]})
+                                       round(x1 + pad, 1), round(cap_y - 3, 1)]})
     # 同一编号可能有多个候选（图题 + 正文引用/图内文字）。真图题按它分段得到的
     # bbox 必然覆盖整张图，面积远大于引用处分段的结果，故取面积最大者。
     best = {}
@@ -295,6 +411,7 @@ def main():
 
     figs, tabs = find_captions(doc, body_left, body_right - body_left)
     boxes = figure_boxes(doc, figs)
+    tabs = add_table_structure(doc, tabs)
 
     # 页边距：正文词的最小/最大 x
     left, right = (body_left, pw - body_right) if bx else (None, None)
