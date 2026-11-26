@@ -113,6 +113,8 @@ python <skill>/scripts/build_check.py main.tex --preview 1
 4. 最后机械核对：`check_tables.py layout.json . --csv-dir tables --cells`
    —— 少列判 FAIL，数字缺值也判 FAIL。
 宽表优先降字号（`\scriptsize`）或拆表，**不要删列**；原表的加粗/斜体（如"每算例优解加粗"）要保留。
+遇到下表所列现象（少一列误报、负号"缺值"、宽表表头顶出、跨页续表、符号表空格等），
+按 `README.md` 的「表格微调清单」逐条处理，不要凭猜改数。
 
 ### 第 6 步：验收
 
