@@ -126,7 +126,8 @@ python <skill>/scripts/build_check.py main.tex --preview 1,10,20
 - 退出码 0，无 `!` 错误；
 - Overfull hbox / vbox 为 0（或 < 3 pt 且不影响阅读）；
 - 图 / 表 / 公式编号连续，且数量与原文一致；
-- 页数为原文的 0.9–1.3 倍；
+- 页数为原文的 0.9–1.3 倍（同目录有 `source.pdf` 时 `build_check.py` 自动核对并判 FAIL，
+  8pt 复刻中文过密会掉到 0.8×，须按 `references/layout-metrics.md` 调到 9.5–10pt）；
 - 每个表格的列数与源表一致，且**源表里出现的每个数字在译文表格里都能找到**
   （`check_tables.py layout.json . --csv-dir tables --cells`），表头文字逐项对应；
 - 原表的粗体、斜体强调标记保留（"每算例优解加粗"这类规则不能丢）；

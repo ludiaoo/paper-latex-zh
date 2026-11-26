@@ -26,6 +26,11 @@ GAP_RATIO = 0.85       # 词间距 > 0.85 × 字高 就切成两个单元格
 COL_GAP = 8.0          # 列锚点聚类阈值（pt）
 HEADER_MAX = 3         # 最多识别几行表头
 
+# 表题行（Table 1 / 表 1 ...）：probe 没拿到 table_bbox 时用「表题 y + 4」兜底裁切，
+# 表题与说明句会被一起框进来。不先剥掉，它们既被当成表头，又污染列锚点，
+# 结果就是「列1..列N」占位符表头 + 凭空多出的列。
+CAPTION_RE = re.compile(r"^\s*(?:Table|TABLE|Tab\.|表)\s*\d+", re.I)
+
 
 # ---------------------------------------------------------------- 字符规范化
 def _build_math_map() -> dict[int, str]:
@@ -234,6 +239,39 @@ def extract_one(pg, tab: dict, body: dict, normalize_chars: bool,
         return {"num": tab["num"], "error": "区域内没有文本"}
 
     cell_rows = [split_cells(r) for r in rows_raw]
+    # 剥掉开头的表题块：「Table N ...」一行，加上紧随其后、跨满整宽的说明句。
+    # 说明句特征是单元格极少（1–2 个）但很长；真正的表头有多个短单元格，不能误剥。
+    drop = 0
+    for cells in cell_rows[:3]:
+        text = " ".join(t for _x0, _x1, t in cells)
+        if drop == 0:
+            if CAPTION_RE.match(text):
+                drop = 1
+                continue
+            break
+        is_sentence = (text.rstrip().endswith((".", "。", "：", ":"))
+                       or len(text) > 40)
+        no_data = not re.search(r"\d", text)
+        if len(cells) <= 3 and is_sentence and no_data:
+            drop += 1
+        else:
+            break
+    if drop:
+        cell_rows = cell_rows[drop:]
+    if not cell_rows:
+        return {"num": tab["num"], "error": "区域内只有表题，没有表格"}
+
+    # 兜底裁切固定向下取 400pt，会把表格后面的正文也框进来；正文左边界（版心左边）
+    # 因此混进列锚点，凭空多出空列。若表头整体明显靠右（居中/右置的表），
+    # 就把起点远在表头左侧的行判为表后正文并丢掉。表头本就贴版心左边界时不处理，
+    # 避免误伤通栏符号表。
+    head_min_x = min(c[0] for c in cell_rows[0]) if cell_rows[0] else 0
+    if head_min_x - body.get("left", 40.0) > 30:
+        kept = [cells for cells in cell_rows
+                if cells and min(c[0] for c in cells) >= head_min_x - 15]
+        if kept:
+            cell_rows = kept
+
     anchors = cluster_columns(cell_rows)
     if len(anchors) < 2:
         return {"num": tab["num"], "error": f"只识别出 {len(anchors)} 列，放弃"}

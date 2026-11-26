@@ -68,6 +68,8 @@ def main():
     ap.add_argument("--dpi", type=int, default=110)
     ap.add_argument("--overfull-tol", type=float, default=3.0,
                     help="允许的 Overfull pt 上限（默认 3，与 SKILL.md 验收标准一致）")
+    ap.add_argument("--source-pdf", default=None,
+                    help="原文 PDF，用于核对页数比 0.9–1.3；默认找同目录 source.pdf")
     args = ap.parse_args()
 
     tex = Path(args.tex).resolve()
@@ -99,6 +101,17 @@ def main():
             info = subprocess.run(["pdfinfo", str(pdf)], capture_output=True, text=True)
             m = re.search(r"Pages:\s+(\d+)", info.stdout)
             pages = int(m.group(1)) if m else None
+
+    # 页数比：SKILL.md 的验收线是原文的 0.9–1.3 倍，之前只有文档没有脚本兜底。
+    src_pdf = Path(args.source_pdf) if args.source_pdf else (tex.parent / "source.pdf")
+    src_pages, ratio = None, None
+    if src_pdf.exists() and pages:
+        try:
+            import pymupdf
+            d = pymupdf.open(src_pdf); src_pages = d.page_count; d.close()
+            ratio = pages / src_pages
+        except Exception:
+            pass
 
     # ---------- 结构编号 ----------
     # 早期做法是从 PDF 全文正则抓「图 N」，正文里的「如图 8 所示」也会被算作编号，
@@ -156,9 +169,13 @@ def main():
         except Exception:
             pass
 
-    ok = code == 0 and not errors and not over_h and not over_v
+    ratio_ok = ratio is None or 0.9 <= ratio <= 1.3
+    ok = code == 0 and not errors and not over_h and not over_v and ratio_ok
     print(f"\n退出码      : {code}")
-    print(f"PDF 页数    : {pages}")
+    print(f"PDF 页数    : {pages}"
+          + (f"（原文 {src_pages} 页，{ratio:.2f}×，"
+             + ("在 0.9–1.3 区间）" if ratio_ok else "超出 0.9–1.3 验收区间）")
+             if ratio is not None else "（未找到原文 PDF，跳过页数比）"))
     print(f"错误        : {len(errors)}")
     for e in errors[:8]:
         print("   ", e)
