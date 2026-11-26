@@ -140,7 +140,7 @@ python ~/.workbuddy/skills/paper-latex-zh/scripts/build_check.py build_tex/main.
 
 ---
 
-## 八个脚本
+## 九个脚本
 
 ### `probe_layout.py` — 版式测绘
 
@@ -176,6 +176,38 @@ python crop_figures.py <input.pdf> <layout.json> --rect 10=24:58,56,498,380
 按 `probe` 给出的 bbox 裁 300 dpi PNG。`--rect` 用于修正纯位图（地图截图、照片），
 格式 `编号=页码:x0,y0,x1,y1`，坐标是 PDF pt，可从 `pages/page-NN.png` 目测
 （1 pt = 渲染 dpi / 72 像素）。
+
+### `extract_tables.py` — 把表格变成可复制的数据
+
+```bash
+python extract_tables.py paper.pdf --layout layout.json --out tables \
+       [--tables 5,8] [--format csv,md,tex] [--keep-blanks] [--raw]
+```
+
+学术论文多为三线表（无竖线），`pymupdf.find_tables()` 会把 15 列的表识别成 4 列。
+本脚本改用**文本坐标**重建行列：按 y 合并同一行 → 按词间距切单元格 → 挂到列锚点，
+多层表头（`CPLEX` 跨 2 列、`PRS-VNS` 跨 3 列）会自动拼成 `CPLEX f*`。
+
+产物：
+
+| 文件 | 用途 |
+|---|---|
+| `tables/tableNN.csv` | UTF-8 BOM，Excel 双击打开，数字可直接求和/筛选 |
+| `tables/tables.md` | 全部表的 Markdown 汇总，便于通读核对 |
+| `tables/tableNN.tex` | 可直接 `\input` 的 tabular（booktabs 三线表）；列宽与字号按内容自动选，≥8 列会均分并缩小，宽表建议改 `table*` 通栏 |
+
+实测（Zhou 2026，11 张表）：表 8 恢复 15 列、表 5 恢复 8 列含 rowspan 展开、
+表 6 三层表头压成 `0.1 f / 0.1 t(s)`。合并单元格多的表会提示"数据行非空单元格数不一致"，
+按提示回看 `tables.md` 复核一格即可，不影响 CSV 的可用性。
+
+### `check_tables.py` — 核对列数与数字
+
+```bash
+python check_tables.py layout.json . --csv-dir tables --cells
+```
+
+`--csv-dir` 让源表列数取自提取的 CSV（比 `find_tables` 可靠）；`--cells` 进一步核对
+**源表出现的每个数字在译文里都能找到**（按集合比，不会因 `\multirow` 只写一次而误报）。
 
 ### `detect_venue.py` — 识别来源
 
@@ -287,6 +319,9 @@ Overfull h  : 0
   不是一回事；要「长得像」用 `replica`，要投稿用 `official`，两者不能兼得。
 - **栏距只能测到整栏空白**。CJK 两端对齐会把行撑到栏边，实测栏距偏小 2–4pt；<4pt 会判成单栏。
 - **中文字体依赖系统**。模板默认 Windows 字体名，换平台须改模板顶部。
+- **表格提取不认跨页表**。跨页续表只取当前页可见部分，续页需 `--tables` 单独指定页码。
+- **符号表的符号可能提取为空**。数学字体里的单个符号常常没有文本层，脚本会给
+  "首列有 N 行为空"警告，这时只能手工补符号。
 - **Word 表单只能尽力而为**。嵌套表格、大量合并单元格、无边框布局表的版式依赖 Word
   的格子技巧，自动转换只保证"文字不丢、能编译"，不保证"长得一样"；编不过时加
   `--tables flatten`，会丢掉表格线但保留全部文字。
@@ -310,6 +345,7 @@ paper-latex-zh/
 │   ├── probe_layout.py           # 版式测绘 + 图表定位（PDF 路径）
 │   ├── crop_figures.py           # 批量裁图（PDF 路径）
 │   ├── detect_venue.py           # 识别期刊/出版方与可用文档类
+│   ├── extract_tables.py         # 表格 → 可复制的 CSV/MD/TeX
 │   ├── verify_figures.py         # 图 bbox 是否盖住全部内容
 │   ├── check_tables.py           # 表格列数与表头核对
 │   ├── make_template.py          # 按实测参数生成 main.tex
@@ -321,7 +357,7 @@ paper-latex-zh/
 │   └── main-cn-a4.tex            # A4 中文论文模板（Word 默认版式）
 └── references/
     ├── layout-metrics.md         # 版式参数换算表 + 两类期刊实测值
-    └── pitfalls.md               # 23 条坑（版式 17 + Word 6）+ 版权合规
+    └── pitfalls.md               # 24 条坑（版式 18 + Word 6）+ 版权合规
 ```
 
 ---

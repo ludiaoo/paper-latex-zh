@@ -111,10 +111,53 @@ def scan_tex(tex_dir: Path):
                 continue
             spec, end = read_balanced(text, i)
             line_no = text.count("\n", 0, m.start()) + 1
+            # 取环境内部文本：数字核对要比对单元格里的数，不能只看结构
+            end_mark = "\\end{%s}" % m.group(1)
+            e = text.find(end_mark, end)
+            body = text[end:e] if e > 0 else ""
             found.append({"file": path.name, "line": line_no,
-                          "env": m.group(1), "ncols": count_columns(spec)})
-            pos = end
+                          "env": m.group(1), "ncols": count_columns(spec),
+                          "body": body})
+            pos = (e + len(end_mark)) if e > 0 else end
     return found
+
+
+NUM_RE = re.compile(r"-?\d+(?:\.\d+)?")
+
+
+def cell_numbers(text: str):
+    """抓单元格里的数字。先按 & 和 \\\\ 切格，再逐格取数，避免把列宽参数当数据。"""
+    # 只按 \\ 和 & 切；不要吞 \\[2pt] 那种可选参数——$[1.0,1.5)$ 会被误当成行距参数整段吃掉
+    cells = re.split(r"\\\\|&", text)
+    out = []
+    for c in cells:
+        # 先去掉「带数字的参数」：rule 类命令、multicolumn/multirow 的前两个参数。
+        # 不能整条命令一起删——\multirow{7}{*}{$[1.0,1.5)$} 的最后一个参数是正文。
+        c = re.sub(r"\\(?:toprule|midrule|bottomrule|hline)(?:\[[^\]]*\])?", "", c)
+        c = re.sub(r"\\cmidrule(?:\([^)]*\))?\{[^}]*\}", "", c)
+        c = re.sub(r"\\cline\{[^}]*\}", "", c)
+        c = re.sub(r"\\(?:multicolumn|multirow)\{[^{}]*\}\{[^{}]*\}", "", c)
+        c = re.sub(r"\\(label|ref|cite)\{[^}]*\}", "", c)
+        c = re.sub(r"\\(begin|end)\{[^}]*\}", "", c)
+        if "linewidth" in c or "tabcolsep" in c or "textwidth" in c:
+            continue
+        out.extend(NUM_RE.findall(c))
+    return [str(float(x)) for x in out]
+
+
+def csv_numbers(rows):
+    return [str(float(x)) for r in rows[1:] for c in r for x in NUM_RE.findall(c)]
+
+
+def load_csv(csv_dir: Path | None, tex_dir: Path, num) -> list[list[str]] | None:
+    if not csv_dir:
+        return None
+    p = csv_dir / f"table{int(num):02d}.csv"
+    if not p.is_file():
+        return None
+    import csv as _csv
+    with p.open(encoding="utf-8-sig", newline="") as f:
+        return list(_csv.reader(f))
 
 
 def main():
@@ -122,6 +165,10 @@ def main():
     ap.add_argument("layout")
     ap.add_argument("tex_dir")
     ap.add_argument("--tol", type=int, default=0, help="允许的列数偏差")
+    ap.add_argument("--csv-dir", default=None,
+                    help="extract_tables.py 的输出目录；有 CSV 时用它作为源表基准（比 find_tables 可靠）")
+    ap.add_argument("--cells", action="store_true",
+                    help="额外核对译文表格里的数字是否都在源表 CSV 中")
     ap.add_argument("--json", default=None)
     args = ap.parse_args()
 
@@ -150,10 +197,16 @@ def main():
         print(f"无法对齐：表号不是从 1 连续递增（{[t['num'] for t in src[:pairs]]}）")
         sys.exit(1)
 
+    csv_dir = Path(args.csv_dir) if args.csv_dir else None
     rows, fails, warns = [], 0, 0
     print(f"{'表':<6}{'源':<5}{'tex':<5}{'位置':<22}判定")
     for t, x in zip(src[:pairs], tex[:pairs]):
-        sn, tn = t.get("ncols"), x["ncols"]
+        src_rows = load_csv(csv_dir, tex_d, t["num"]) if csv_dir else None
+        if src_rows:
+            sn, tn = len(src_rows[0]), x["ncols"]
+            t["header"] = src_rows[0]
+        else:
+            sn, tn = t.get("ncols"), x["ncols"]
         loc = f"{x['file']}:{x['line']}"
         if sn is None:
             status = "跳过（源表未识别）"
@@ -166,6 +219,21 @@ def main():
             warns += 1
         else:
             status = "OK"
+        if args.cells and src_rows and status.startswith("OK"):
+            # 比集合而不是多重集：CSV 为了能筛选，把合并单元格展开了（每行都带 1.00），
+            # 译文用 \multirow 只写一次，按多重集比会误报成"缺 40 个数字"
+            want = set(csv_numbers(src_rows))
+            have = set(cell_numbers(x.get("body", "")))
+            missing = want - have
+            extra = have - want
+            if missing:
+                sample = ", ".join(sorted(missing)[:5])
+                status = f"数字缺 {len(missing)} 个不同值（{sample}）"
+                fails += 1
+            elif extra:
+                status = f"OK（多 {len(extra)} 个不同值，可能是译文新增的序号/年份）"
+            else:
+                status = "OK（数字全中）"
         print(f"表{t['num']:<5}{str(sn):<5}{str(tn):<5}{loc:<22}{status}")
         rows.append({"num": t["num"], "source_cols": sn, "tex_cols": tn,
                      "file": x["file"], "line": x["line"], "status": status,
