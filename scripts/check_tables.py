@@ -141,6 +141,8 @@ def cell_numbers(text: str):
         c = re.sub(r"\\(begin|end)\{[^}]*\}", "", c)
         if "linewidth" in c or "tabcolsep" in c or "textwidth" in c:
             continue
+        # 中文排版里负号常写成 $-$（TeX 的减号），不归一化会把 -0.93 误报成缺值
+        c = c.replace("$-$", "-").replace("$-", "-").replace("-$", "-")
         out.extend(NUM_RE.findall(c))
     return [str(float(x)) for x in out]
 
@@ -248,7 +250,7 @@ def main():
     if args.json:
         Path(args.json).write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
         print(f"\nJSON 已写入 {args.json}")
-    print(f"\n{len(rows) - fails - warns} 一致 / {fails} 少列 / {warns} 待人工确认")
+    print(f"\n{len(rows) - fails - warns} 一致 / {fails} 不符 / {warns} 待人工确认")
     sys.exit(0 if fails == 0 else 1)
 
 
