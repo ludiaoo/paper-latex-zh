@@ -429,10 +429,11 @@ def postprocess(text: str, workdir: Path, outdir: Path, numbering: str,
     # 计数器 "none" 而报错（No counter 'none' defined），改成真实计数器
     text = text.replace(r"\def\LTcaptype{none}", r"\def\LTcaptype{table}")
 
-    # Word 下划线 -> \underline。但 \underline 内部不换行：长句（超链接文字、整句强调）
-    # 会撑出一个不可断的盒子，直接 Overfull 几百 pt。超过 12 字的就去掉下划线，保留文字。
+    # Word 下划线 -> \underline。但 \underline 内部不换行：超链接文字、整句强调
+    # 会撑出不可断的盒子。实测 10 个汉字的下划线就能造成 58pt Overfull。
+    # 超过 7 字就去掉下划线、保留文字（表单填空的 \underline{\hspace{..}} 不含此模式）。
     text = re.sub(r"\\ul\{(.*?)\}", r"\\underline{\1}", text)
-    text = re.sub(r"\\underline\{([^{}]{13,}?)\}", r"\1", text)
+    text = re.sub(r"\\underline\{([^{}]{8,}?)\}", r"\1", text)
 
     # pandoc 的双引号是 ``…''，中文用弯引号
     text = re.sub(r"``([^`']{1,120})''", r"“\1”", text)

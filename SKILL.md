@@ -80,8 +80,9 @@ python <skill>/scripts/crop_figures.py source.pdf layout.json --out figs
 
 ### 第 4 步：搭骨架、试排首页
 
-把 `assets/main-single.tex`（或 `main-twocol.tex`）复制为 `main.tex`，改顶部参数与首页区
-（标题、作者、单位、关键词、摘要）。先只写第 1 节前两段，编译看首页：
+接着第 2 步生成的 `main.tex` 往下做：改首页区（标题、作者、单位、关键词、摘要），
+确认 `\input{body}` 指向正文文件。**不要回头用 `assets/*.tex` 覆盖它**——那些是无法探测版式
+时的兜底模板，覆盖会把实测的页面尺寸、边距、字号全丢掉。先只写第 1 节前两段，编译看首页：
 
 ```bash
 python <skill>/scripts/build_check.py main.tex --preview 1

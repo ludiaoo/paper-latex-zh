@@ -346,7 +346,7 @@ def tex_escape(s: str) -> str:
     return s.replace("[", "{[}")
 
 
-def write_tex(path: Path, data: dict, caption: str = ""):
+def write_tex(path: Path, data: dict, caption: str = "", body_width_pt: float = 420.0):
     rows, n = data["rows"], data["ncols"]
     lens = [max([len(r[i]) for r in rows] + [len(data["header"][i]), 4])
             for i in range(n)]
@@ -358,7 +358,7 @@ def write_tex(path: Path, data: dict, caption: str = ""):
         # 宽表：均分列宽。可用宽度要扣掉列间距（每列 2×\tabcolsep），
         # 否则 15 列的 tabcolsep 就有 180pt，怎么排都溢出
         tabsep_pt = 4.0 if n >= 11 else 6.0
-        usable = 0.96 - n * (2 * tabsep_pt) / 420.0
+        usable = 0.96 - n * (2 * tabsep_pt) / max(body_width_pt, 120.0)
         per = max(usable, 0.5) / n * 0.97   # 再留 1% 余量，消掉 \\tabcolsep 的舍入误差
         spec = "@{}" + "".join(f"p{{{per:.4f}\\linewidth}}" for _ in range(n)) + "@{}"
         size = "\\tiny" if n >= 11 else "\\scriptsize"
@@ -445,7 +445,8 @@ def main() -> int:
         if "csv" in formats:
             write_csv(outdir / f"{stem}.csv", res)
         if "tex" in formats:
-            write_tex(outdir / f"{stem}.tex", res)
+            write_tex(outdir / f"{stem}.tex", res,
+                      body_width_pt=body["right"] - body["left"])
     doc.close()
 
     if "md" in formats and results:

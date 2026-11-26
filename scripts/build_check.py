@@ -66,6 +66,8 @@ def main():
     ap.add_argument("--xelatex", default=None)
     ap.add_argument("--preview", default=None, help="要渲染的页码，如 1,5,12")
     ap.add_argument("--dpi", type=int, default=110)
+    ap.add_argument("--overfull-tol", type=float, default=3.0,
+                    help="允许的 Overfull pt 上限（默认 3，与 SKILL.md 验收标准一致）")
     args = ap.parse_args()
 
     tex = Path(args.tex).resolve()
@@ -79,8 +81,12 @@ def main():
     logtext = log.read_text(encoding="utf-8", errors="replace") if log.exists() else ""
 
     errors = [l for l in logtext.splitlines() if l.startswith("! ")]
-    over_h = re.findall(r"Overfull \\hbox \(([\d.]+)pt too wide\)", logtext)
-    over_v = re.findall(r"Overfull \\vbox \(([\d.]+)pt too high\)", logtext)
+    # 与 SKILL.md 验收标准对齐：< 3pt 且不影响阅读的溢出不算失败。
+    # 原文是字符串，转成 float 才能按阈值过滤。
+    oh_all = [float(x) for x in re.findall(r"Overfull \\hbox \(([\d.]+)pt too wide\)", logtext)]
+    ov_all = [float(x) for x in re.findall(r"Overfull \\vbox \(([\d.]+)pt too high\)", logtext)]
+    over_h = [x for x in oh_all if x > args.overfull_tol]
+    over_v = [x for x in ov_all if x > args.overfull_tol]
     undef = "undefined" in logtext.lower() and "LaTeX Warning: Reference" in logtext
 
     pdf = tex.with_suffix(".pdf")
@@ -156,8 +162,13 @@ def main():
     print(f"错误        : {len(errors)}")
     for e in errors[:8]:
         print("   ", e)
-    print(f"Overfull h  : {len(over_h)}" + (f"  ({', '.join(over_h[:6])} pt)" if over_h else ""))
-    print(f"Overfull v  : {len(over_v)}" + (f"  ({', '.join(over_v[:6])} pt)" if over_v else ""))
+    fmt = lambda xs: ", ".join(f"{x:.1f}" for x in xs[:6])
+    print(f"Overfull h  : {len(over_h)} pt>阈值"
+          + (f"  ({fmt(over_h)})" if over_h else "")
+          + (f"  [忽略 {len(oh_all) - len(over_h)} 处 ≤{args.overfull_tol:g}pt]" if len(oh_all) > len(over_h) else ""))
+    print(f"Overfull v  : {len(over_v)} pt>阈值"
+          + (f"  ({fmt(over_v)})" if over_v else "")
+          + (f"  [忽略 {len(ov_all) - len(over_v)} 处 ≤{args.overfull_tol:g}pt]" if len(ov_all) > len(over_v) else ""))
     print(f"未定义引用  : {'是' if undef else '否'}")
 
     print(f"页面体检    : 近空白 {len(near_blank)} 页"

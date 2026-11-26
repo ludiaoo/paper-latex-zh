@@ -112,17 +112,22 @@ mkdir -p proj/{extract,pages,figs,build} && cp paper.pdf proj/source.pdf && cd p
 pdftotext -layout source.pdf extract/fulltext.txt    # 文字底稿（公式会乱码，只看文字）
 pdftoppm -r 200 -png source.pdf pages/page           # 整页渲染，作视觉比对基准
 
-# 1) 量版式
-python ~/.workbuddy/skills/paper-latex-zh/scripts/probe_layout.py source.pdf --json layout.json
+# 1) 量版式 + 认来源 + 生成这篇论文专属的 main.tex
+S=~/.workbuddy/skills/paper-latex-zh/scripts
+python $S/probe_layout.py     source.pdf --json layout.json
+python $S/detect_venue.py     source.pdf --layout layout.json --json venue.json
+python $S/make_template.py    layout.json --venue venue.json --out main.tex
 
-# 2) 裁图
-python ~/.workbuddy/skills/paper-latex-zh/scripts/crop_figures.py source.pdf layout.json --out figs
+# 2) 裁图 + 抽表格（表格变成可复制的 CSV）
+python $S/crop_figures.py     source.pdf layout.json --out figs
+python $S/extract_tables.py   source.pdf --layout layout.json --out tables
 
-# 3) 复制模板、填参数、写正文
-cp ~/.workbuddy/skills/paper-latex-zh/assets/main-single.tex main.tex
+# 3) 写正文：在 main.tex 的 BODY 标记处 \input{body}，逐节翻译
+#    不要 cp assets/*.tex 覆盖 main.tex —— 那是无法探测时的兜底
 
-# 4) 编译 + 校验 + 预览
-python ~/.workbuddy/skills/paper-latex-zh/scripts/build_check.py main.tex --preview 1,10,20
+# 4) 编译 + 校验 + 预览（含表格核对）
+python $S/build_check.py      main.tex --preview 1,10,20
+python $S/check_tables.py     layout.json . --csv-dir tables --cells
 ```
 
 **Word 转 LaTeX：**
@@ -318,6 +323,8 @@ Overfull h  : 0
 - **官方文档类 ≠ 已发表版式**。`elsarticle preprint` 是投稿版，和 ScienceDirect 上排版好的 PDF
   不是一回事；要「长得像」用 `replica`，要投稿用 `official`，两者不能兼得。
 - **栏距只能测到整栏空白**。CJK 两端对齐会把行撑到栏边，实测栏距偏小 2–4pt；<4pt 会判成单栏。
+- **生成的宽表 TeX 是草稿**。≥8 列时等宽均分列宽，表头里的长英文单词（如 `Algorithm`）会
+  顶出几 pt；`\input` 后按实际版心微调列宽或改 `table*`，CSV 数据不受影响。
 - **中文字体依赖系统**。模板默认 Windows 字体名，换平台须改模板顶部。
 - **表格提取不认跨页表**。跨页续表只取当前页可见部分，续页需 `--tables` 单独指定页码。
 - **符号表的符号可能提取为空**。数学字体里的单个符号常常没有文本层，脚本会给
